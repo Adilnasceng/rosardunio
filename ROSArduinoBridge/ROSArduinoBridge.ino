@@ -252,34 +252,38 @@ int runCommand() {
 void setup() {
   Serial.begin(BAUDRATE);
 
-// Initialize the motor controller if used */
+// Motor controller ve encoder başlatma
 #ifdef USE_BASE
   #ifdef ARDUINO_ENC_COUNTER
-    //set as inputs
-    DDRD &= ~(1<<LEFT_ENC_PIN_A);
-    DDRD &= ~(1<<LEFT_ENC_PIN_B);
-    DDRC &= ~(1<<RIGHT_ENC_PIN_A);
-    DDRC &= ~(1<<RIGHT_ENC_PIN_B);
+    // Arduino Mega 2560 için encoder pin konfigürasyonu
     
-    //enable pull up resistors
-    PORTD |= (1<<LEFT_ENC_PIN_A);
-    PORTD |= (1<<LEFT_ENC_PIN_B);
-    PORTC |= (1<<RIGHT_ENC_PIN_A);
-    PORTC |= (1<<RIGHT_ENC_PIN_B);
+    // Sol encoder pinlerini input olarak ayarla
+    pinMode(LEFT_ENC_PIN_A, INPUT_PULLUP);  // Pin 2
+    pinMode(LEFT_ENC_PIN_B, INPUT_PULLUP);  // Pin 3
     
-    // tell pin change mask to listen to left encoder pins
-    PCMSK2 |= (1 << LEFT_ENC_PIN_A)|(1 << LEFT_ENC_PIN_B);
-    // tell pin change mask to listen to right encoder pins
-    PCMSK1 |= (1 << RIGHT_ENC_PIN_A)|(1 << RIGHT_ENC_PIN_B);
+    // Sağ encoder pinlerini input olarak ayarla  
+    pinMode(RIGHT_ENC_PIN_A, INPUT_PULLUP); // Pin 18
+    pinMode(RIGHT_ENC_PIN_B, INPUT_PULLUP); // Pin 19
     
-    // enable PCINT1 and PCINT2 interrupt in the general interrupt mask
-    PCICR |= (1 << PCIE1) | (1 << PCIE2);
+    // Sol encoder için interrupt'ları bağla
+    // INT0 (Pin 2) - Sol encoder A kanalı
+    attachInterrupt(digitalPinToInterrupt(LEFT_ENC_PIN_A), leftEncoderAInterrupt, CHANGE);
+    // INT1 (Pin 3) - Sol encoder B kanalı  
+    attachInterrupt(digitalPinToInterrupt(LEFT_ENC_PIN_B), leftEncoderBInterrupt, CHANGE);
+    
+    // Sağ encoder için interrupt'ları bağla
+    // INT5 (Pin 18) - Sağ encoder A kanalı
+    attachInterrupt(digitalPinToInterrupt(RIGHT_ENC_PIN_A), rightEncoderAInterrupt, CHANGE);
+    // INT4 (Pin 19) - Sağ encoder B kanalı
+    attachInterrupt(digitalPinToInterrupt(RIGHT_ENC_PIN_B), rightEncoderBInterrupt, CHANGE);
+    
   #endif
+  
   initMotorController();
   resetPID();
 #endif
 
-/* Attach servos if used */
+/* Servo bağlantıları */
   #ifdef USE_SERVOS
     int i;
     for (i = 0; i < N_SERVOS; i++) {

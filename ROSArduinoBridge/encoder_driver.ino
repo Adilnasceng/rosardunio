@@ -1,10 +1,7 @@
 /* *************************************************************
-   Encoder definitions
+   Arduino Mega 2560 için Encoder definitions
    
-   Add an "#ifdef" block to this file to include support for
-   a particular encoder board or library. Then add the appropriate
-   #define near the top of the main ROSArduinoBridge.ino file.
-   
+   Harici interrupt pinleri kullanılarak quadrature encoder okuma
    ************************************************************ */
    
 #ifdef USE_BASE
@@ -30,41 +27,57 @@
 #elif defined(ARDUINO_ENC_COUNTER)
   volatile long left_enc_pos = 0L;
   volatile long right_enc_pos = 0L;
-  static const int8_t ENC_STATES [] = {0,1,-1,0,-1,0,0,1,1,0,0,-1,0,-1,1,0};  //encoder lookup table
+  
+  // Encoder durumları için lookup table
+  static const int8_t ENC_STATES [] = {0,1,-1,0,-1,0,0,1,1,0,0,-1,0,-1,1,0};
+  
+  // Sol encoder için durum değişkenleri
+  volatile uint8_t left_enc_last = 0;
+  
+  // Sağ encoder için durum değişkenleri  
+  volatile uint8_t right_enc_last = 0;
     
-  /* Interrupt routine for LEFT encoder, taking care of actual counting */
-  ISR (PCINT2_vect){
-  	static uint8_t enc_last=0;
-        
-	enc_last <<=2; //shift previous state two places
-	enc_last |= (PIND & (3 << 2)) >> 2; //read the current state into lowest 2 bits
-  
-  	left_enc_pos += ENC_STATES[(enc_last & 0x0f)];
+  /* Sol encoder A pini için interrupt (INT0 - Pin 2) */
+  void leftEncoderAInterrupt() {
+    left_enc_last <<= 2; // Önceki durumu 2 bit sola kaydır
+    left_enc_last |= (digitalRead(LEFT_ENC_PIN_A) << 1) | digitalRead(LEFT_ENC_PIN_B);
+    left_enc_pos += ENC_STATES[(left_enc_last & 0x0f)];
   }
   
-  /* Interrupt routine for RIGHT encoder, taking care of actual counting */
-  ISR (PCINT1_vect){
-        static uint8_t enc_last=0;
-          	
-	enc_last <<=2; //shift previous state two places
-	enc_last |= (PINC & (3 << 4)) >> 4; //read the current state into lowest 2 bits
-  
-  	right_enc_pos += ENC_STATES[(enc_last & 0x0f)];
+  /* Sol encoder B pini için interrupt (INT1 - Pin 3) */
+  void leftEncoderBInterrupt() {
+    left_enc_last <<= 2; // Önceki durumu 2 bit sola kaydır
+    left_enc_last |= (digitalRead(LEFT_ENC_PIN_A) << 1) | digitalRead(LEFT_ENC_PIN_B);
+    left_enc_pos += ENC_STATES[(left_enc_last & 0x0f)];
   }
   
-  /* Wrap the encoder reading function */
+  /* Sağ encoder A pini için interrupt (INT5 - Pin 18) */
+  void rightEncoderAInterrupt() {
+    right_enc_last <<= 2; // Önceki durumu 2 bit sola kaydır
+    right_enc_last |= (digitalRead(RIGHT_ENC_PIN_A) << 1) | digitalRead(RIGHT_ENC_PIN_B);
+    right_enc_pos += ENC_STATES[(right_enc_last & 0x0f)];
+  }
+  
+  /* Sağ encoder B pini için interrupt (INT4 - Pin 19) */
+  void rightEncoderBInterrupt() {
+    right_enc_last <<= 2; // Önceki durumu 2 bit sola kaydır
+    right_enc_last |= (digitalRead(RIGHT_ENC_PIN_A) << 1) | digitalRead(RIGHT_ENC_PIN_B);
+    right_enc_pos += ENC_STATES[(right_enc_last & 0x0f)];
+  }
+  
+  /* Encoder okuma fonksiyonu */
   long readEncoder(int i) {
     if (i == LEFT) return left_enc_pos;
     else return right_enc_pos;
   }
 
-  /* Wrap the encoder reset function */
+  /* Encoder sıfırlama fonksiyonu */
   void resetEncoder(int i) {
     if (i == LEFT){
-      left_enc_pos=0L;
+      left_enc_pos = 0L;
       return;
     } else { 
-      right_enc_pos=0L;
+      right_enc_pos = 0L;
       return;
     }
   }
@@ -72,11 +85,10 @@
   #error A encoder driver must be selected!
 #endif
 
-/* Wrap the encoder reset function */
+/* Her iki encoder'ı sıfırlama fonksiyonu */
 void resetEncoders() {
   resetEncoder(LEFT);
   resetEncoder(RIGHT);
 }
 
 #endif
-
