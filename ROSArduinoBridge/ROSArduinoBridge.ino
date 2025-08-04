@@ -1,48 +1,5 @@
 /*********************************************************************
- *  ROSArduinoBridge
- 
-    A set of simple serial commands to control a differential drive
-    robot and receive back sensor and odometry data. Default 
-    configuration assumes use of an Arduino Mega + Pololu motor
-    controller shield + Robogaia Mega Encoder shield.  Edit the
-    readEncoder() and setMotorSpeed() wrapper functions if using 
-    different motor controller or encoder method.
-
-    Created for the Pi Robot Project: http://www.pirobot.org
-    and the Home Brew Robotics Club (HBRC): http://hbrobotics.org
-    
-    Authors: Patrick Goebel, James Nugen
-
-    Inspired and modeled after the ArbotiX driver by Michael Ferguson
-    
-    Software License Agreement (BSD License)
-
-    Copyright (c) 2012, Patrick Goebel.
-    All rights reserved.
-
-    Redistribution and use in source and binary forms, with or without
-    modification, are permitted provided that the following conditions
-    are met:
-
-     * Redistributions of source code must retain the above copyright
-       notice, this list of conditions and the following disclaimer.
-     * Redistributions in binary form must reproduce the above
-       copyright notice, this list of conditions and the following
-       disclaimer in the documentation and/or other materials provided
-       with the distribution.
-
-    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-    "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-    LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
-    FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
-    COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
-    INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-    BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-    LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-    CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-    LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
-    ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- *  POSSIBILITY OF SUCH DAMAGE.
+ *  ROSArduinoBridge - Tekrarlı buzzer sistemi ile güncellenmiş versiyon
  *********************************************************************/
 
 #define USE_BASE      // Enable the base controller code
@@ -50,22 +7,7 @@
 
 /* Define the motor controller and encoder library you are using */
 #ifdef USE_BASE
-   /* The Pololu VNH5019 dual motor driver shield */
-   //#define POLOLU_VNH5019
-
-   /* The Pololu MC33926 dual motor driver shield */
-   //#define POLOLU_MC33926
-
-   /* The RoboGaia encoder shield */
-   //#define ROBOGAIA
-   
-   /* Encoders directly attached to Arduino board */
    #define ARDUINO_ENC_COUNTER
-
-   /* L298 Motor driver*/
-   //#define L298_MOTOR_DRIVER
-   
-   /* BTS7960 Motor driver - Enable pinleri donanımsal olarak bağlı */
    #define BTS7960_MOTOR_DRIVER
 #endif
 
@@ -77,6 +19,13 @@
 
 /* Maximum PWM signal */
 #define MAX_PWM        255
+
+/* Buzzer pin definition */
+#define BUZZER_PIN     8   // Buzzer bağlı olduğu pin
+
+/* Buzzer pattern configuration */
+#define BEEP_ON_TIME   200   // Beep süresi (ms)
+#define BEEP_OFF_TIME  300   // Beep arası bekleme süresi (ms)
 
 #if defined(ARDUINO) && ARDUINO >= 100
 #include "Arduino.h"
@@ -122,7 +71,6 @@
 #endif
 
 /* Variable initialization */
-
 // A pair of varibles to help parse serial commands (thanks Fergs)
 int arg = 0;
 int index = 0;
@@ -141,6 +89,11 @@ char argv2[16];
 long arg1;
 long arg2;
 
+/* Buzzer control variables */
+bool buzzer_enabled = false;      // Buzzer etkin mi?
+bool buzzer_state = false;        // Anlık buzzer durumu (HIGH/LOW)
+unsigned long last_beep_time = 0; // Son beep zamanı
+
 /* Clear the current command parameters */
 void resetCommand() {
   cmd = NULL;
@@ -150,6 +103,37 @@ void resetCommand() {
   arg2 = 0;
   arg = 0;
   index = 0;
+}
+
+/* Buzzer pattern kontrolü */
+void updateBuzzer() {
+  if (!buzzer_enabled) {
+    // Buzzer devre dışı - kapalı tut
+    if (buzzer_state) {
+      digitalWrite(BUZZER_PIN, LOW);
+      buzzer_state = false;
+    }
+    return;
+  }
+  
+  // Buzzer etkin - pattern çal
+  unsigned long current_time = millis();
+  
+  if (buzzer_state) {
+    // Script çalıyor - bekleme süresini kontrol et
+    if (current_time - last_beep_time >= BEEP_ON_TIME) {
+      digitalWrite(BUZZER_PIN, LOW);
+      buzzer_state = false;
+      last_beep_time = current_time;
+    }
+  } else {
+    // Buzzer kapalı - yeni beep zamanı mı?
+    if (current_time - last_beep_time >= BEEP_OFF_TIME) {
+      digitalWrite(BUZZER_PIN, HIGH);
+      buzzer_state = true;
+      last_beep_time = current_time;
+    }
+  }
 }
 
 /* Run a command.  Commands are defined in commands.h */
@@ -164,6 +148,16 @@ int runCommand() {
   switch(cmd) {
   case GET_BAUDRATE:
     Serial.println(BAUDRATE);
+    break;
+  case BUZZER_CONTROL:
+    // Buzzer kontrolü: "b 1" etkinleştir, "b 0" devre dışı bırak
+    buzzer_enabled = (arg1 == 1);
+    if (!buzzer_enabled) {
+      // Buzzer devre dışı bırakılırsa hemen kapat
+      digitalWrite(BUZZER_PIN, LOW);
+      buzzer_state = false;
+    }
+    Serial.println("OK");
     break;
   case ANALOG_READ:
     Serial.println(analogRead(arg1));
@@ -252,31 +246,27 @@ int runCommand() {
 void setup() {
   Serial.begin(BAUDRATE);
 
+  // Buzzer pin'ini output olarak ayarla ve başlangıçta kapat
+  pinMode(BUZZER_PIN, OUTPUT);
+  digitalWrite(BUZZER_PIN, LOW);
+  buzzer_enabled = false;
+  buzzer_state = false;
+  last_beep_time = millis();
+
 // Motor controller ve encoder başlatma
 #ifdef USE_BASE
   #ifdef ARDUINO_ENC_COUNTER
     // Arduino Mega 2560 için encoder pin konfigürasyonu
-    
-    // Sol encoder pinlerini input olarak ayarla
     pinMode(LEFT_ENC_PIN_A, INPUT_PULLUP);  // Pin 2
     pinMode(LEFT_ENC_PIN_B, INPUT_PULLUP);  // Pin 3
-    
-    // Sağ encoder pinlerini input olarak ayarla  
     pinMode(RIGHT_ENC_PIN_A, INPUT_PULLUP); // Pin 18
     pinMode(RIGHT_ENC_PIN_B, INPUT_PULLUP); // Pin 19
     
-    // Sol encoder için interrupt'ları bağla
-    // INT0 (Pin 2) - Sol encoder A kanalı
+    // Interrupt'ları bağla
     attachInterrupt(digitalPinToInterrupt(LEFT_ENC_PIN_A), leftEncoderAInterrupt, CHANGE);
-    // INT1 (Pin 3) - Sol encoder B kanalı  
     attachInterrupt(digitalPinToInterrupt(LEFT_ENC_PIN_B), leftEncoderBInterrupt, CHANGE);
-    
-    // Sağ encoder için interrupt'ları bağla
-    // INT5 (Pin 18) - Sağ encoder A kanalı
     attachInterrupt(digitalPinToInterrupt(RIGHT_ENC_PIN_A), rightEncoderAInterrupt, CHANGE);
-    // INT4 (Pin 19) - Sağ encoder B kanalı
     attachInterrupt(digitalPinToInterrupt(RIGHT_ENC_PIN_B), rightEncoderBInterrupt, CHANGE);
-    
   #endif
   
   initMotorController();
@@ -284,15 +274,15 @@ void setup() {
 #endif
 
 /* Servo bağlantıları */
-  #ifdef USE_SERVOS
-    int i;
-    for (i = 0; i < N_SERVOS; i++) {
-      servos[i].initServo(
-          servoPins[i],
-          stepDelay[i],
-          servoInitPosition[i]);
-    }
-  #endif
+#ifdef USE_SERVOS
+  int i;
+  for (i = 0; i < N_SERVOS; i++) {
+    servos[i].initServo(
+        servoPins[i],
+        stepDelay[i],
+        servoInitPosition[i]);
+  }
+#endif
 }
 
 /* Enter the main loop.  Read and parse input from the serial port
@@ -339,6 +329,9 @@ void loop() {
       }
     }
   }
+  
+  // Buzzer pattern'ini güncelle
+  updateBuzzer();
   
 // If we are using base control, run a PID calculation at the appropriate intervals
 #ifdef USE_BASE

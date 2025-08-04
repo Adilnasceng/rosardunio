@@ -6,7 +6,8 @@
 #define COMMANDS_H
 
 #define ANALOG_READ    'a'
-#define GET_BAUDRATE   'b'
+#define BUZZER_CONTROL 'b'  // Buzzer kontrolü için eklendi (GET_BAUDRATE ile çakışmayacak şekilde)
+#define GET_BAUDRATE   'z'  // Baudrate komutunu 'z' ye değiştirdik
 #define PIN_MODE       'c'
 #define DIGITAL_READ   'd'
 #define READ_ENCODERS  'e'
