@@ -1,5 +1,5 @@
 /*********************************************************************
- *  ROSArduinoBridge - Tekrarlı buzzer sistemi ile güncellenmiş versiyon
+ *  ROSArduinoBridge - DFPlayer Mini ses sistemi ile güncellenmiş versiyon
  *********************************************************************/
 
 #define USE_BASE      // Enable the base controller code
@@ -27,10 +27,24 @@
 #define BEEP_ON_TIME   200   // Beep süresi (ms)
 #define BEEP_OFF_TIME  300   // Beep arası bekleme süresi (ms)
 
+/* DFPlayer Mini configuration */
+#define USE_DFPLAYER   // DFPlayer Mini kullanımını etkinleştir
+#define DFPLAYER_RX_PIN 12  // Arduino pin 12 -> DFPlayer TX
+#define DFPLAYER_TX_PIN 13  // Arduino pin 13 -> DFPlayer RX
+
 #if defined(ARDUINO) && ARDUINO >= 100
 #include "Arduino.h"
 #else
 #include "WProgram.h"
+#endif
+
+/* DFPlayer Mini kütüphaneleri */
+#ifdef USE_DFPLAYER
+#include <SoftwareSerial.h>
+#include <DFRobotDFPlayerMini.h>
+SoftwareSerial dfSerial(DFPLAYER_RX_PIN, DFPLAYER_TX_PIN);
+DFRobotDFPlayerMini dfplayer;
+bool dfplayer_ready = false;
 #endif
 
 /* Include definition of serial commands */
@@ -94,6 +108,59 @@ bool buzzer_enabled = false;      // Buzzer etkin mi?
 bool buzzer_state = false;        // Anlık buzzer durumu (HIGH/LOW)
 unsigned long last_beep_time = 0; // Son beep zamanı
 
+/* DFPlayer fonksiyonları */
+#ifdef USE_DFPLAYER
+void initDFPlayer() {
+  dfSerial.begin(9600);
+  Serial.println(F("DFPlayer başlatılıyor..."));
+  
+  if (!dfplayer.begin(dfSerial)) {
+    Serial.println(F("DFPlayer başlatılamadı! Bağlantıları kontrol et."));
+    dfplayer_ready = false;
+    return;
+  }
+  
+  Serial.println(F("DFPlayer hazır."));
+  dfplayer.volume(10); // 0-30 arası ses seviyesi
+  delay(200);
+  dfplayer_ready = true;
+}
+
+void playSound(int sound_number) {
+  if (!dfplayer_ready) {
+    Serial.println(F("DFPlayer hazır değil!"));
+    return;
+  }
+  
+  if (sound_number >= 1 && sound_number <= 2) {
+    dfplayer.play(sound_number);
+    Serial.print(F("Ses çalınıyor: "));
+    Serial.println(sound_number);
+  } else {
+    Serial.print(F("Geçersiz ses numarası: "));
+    Serial.println(sound_number);
+  }
+}
+
+void checkDFPlayerStatus() {
+  if (!dfplayer_ready) return;
+  
+  if (dfplayer.available()) {
+    int type = dfplayer.readType();
+    int value = dfplayer.read();
+    
+    if (type == DFPlayerPlayFinished) {
+      Serial.print(F("Ses çalma tamamlandı: "));
+      Serial.println(value);
+    }
+    else if (type == DFPlayerError) {
+      Serial.print(F("DFPlayer hatası: "));
+      Serial.println(value);
+    }
+  }
+}
+#endif
+
 /* Clear the current command parameters */
 void resetCommand() {
   cmd = NULL;
@@ -120,7 +187,7 @@ void updateBuzzer() {
   unsigned long current_time = millis();
   
   if (buzzer_state) {
-    // Script çalıyor - bekleme süresini kontrol et
+    // Buzzer çalıyor - bekleme süresini kontrol et
     if (current_time - last_beep_time >= BEEP_ON_TIME) {
       digitalWrite(BUZZER_PIN, LOW);
       buzzer_state = false;
@@ -157,6 +224,15 @@ int runCommand() {
       digitalWrite(BUZZER_PIN, LOW);
       buzzer_state = false;
     }
+    Serial.println("OK");
+    break;
+  case SOUND_CONTROL:
+    // Ses kontrolü: "s 1" ses 1'i çal, "s 2" ses 2'yi çal
+    #ifdef USE_DFPLAYER
+    playSound(arg1);
+    #else
+    Serial.println("DFPlayer devre dışı");
+    #endif
     Serial.println("OK");
     break;
   case ANALOG_READ:
@@ -253,6 +329,11 @@ void setup() {
   buzzer_state = false;
   last_beep_time = millis();
 
+  // DFPlayer Mini'yi başlat
+  #ifdef USE_DFPLAYER
+  initDFPlayer();
+  #endif
+
 // Motor controller ve encoder başlatma
 #ifdef USE_BASE
   #ifdef ARDUINO_ENC_COUNTER
@@ -283,6 +364,8 @@ void setup() {
         servoInitPosition[i]);
   }
 #endif
+
+  Serial.println("Arduino ROSBridge hazır - DFPlayer destekli versiyon");
 }
 
 /* Enter the main loop.  Read and parse input from the serial port
@@ -332,6 +415,11 @@ void loop() {
   
   // Buzzer pattern'ini güncelle
   updateBuzzer();
+  
+  // DFPlayer durumunu kontrol et
+  #ifdef USE_DFPLAYER
+  checkDFPlayerStatus();
+  #endif
   
 // If we are using base control, run a PID calculation at the appropriate intervals
 #ifdef USE_BASE
