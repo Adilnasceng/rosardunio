@@ -1,23 +1,18 @@
 #ifndef SERVOS_H
 #define SERVOS_H
 
+// Servo sayısı (ihtiyacınıza göre ayarlayın)
+#define N_SERVOS 1
 
-#define N_SERVOS 2
+// Servo hareket hızı ayarı (ms cinsinden step gecikmesi)
+// 0 = tam hız, büyük değerler = yavaş hareket
+int stepDelay [N_SERVOS] = { 20 }; // 20ms = hızlı hareket
 
-// This delay in milliseconds determines the pause 
-// between each one degree step the servo travels.  Increasing 
-// this number will make the servo sweep more slowly.  
-// Decreasing this number will make the servo sweep more quickly.
-// Zero is the default number and will make the servos spin at
-// full speed.  150 ms makes them spin very slowly.
-int stepDelay [N_SERVOS] = { 0, 0 }; // ms
+// Servo pin tanımları
+byte servoPins [N_SERVOS] = { 4 }; // Pin 4'e bağlı servo
 
-// Pins
-byte servoPins [N_SERVOS] = { 3, 4 };
-
-// Initial Position
-byte servoInitPosition [N_SERVOS] = { 90, 90 }; // [0, 180] degrees
-
+// Başlangıç pozisyonları (derece cinsinden)
+byte servoInitPosition [N_SERVOS] = { 0 }; // Başlangıçta 0 derece
 
 class SweepServo
 {

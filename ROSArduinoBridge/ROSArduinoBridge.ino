@@ -1,5 +1,5 @@
 /*********************************************************************
- *  ROSArduinoBridge - DFPlayer Mini ses sistemi ile güncellenmiş versiyon
+ *  ROSArduinoBridge - DFPlayer Mini ses sistemi ve Servo Motor ile güncellenmiş versiyon
  *********************************************************************/
 
 #define USE_BASE      // Enable the base controller code
@@ -11,8 +11,8 @@
    #define BTS7960_MOTOR_DRIVER
 #endif
 
-//#define USE_SERVOS  // Enable use of PWM servos as defined in servos.h
-#undef USE_SERVOS     // Disable use of PWM servos
+#define USE_SERVOS    // Enable use of PWM servos as defined in servos.h
+//#undef USE_SERVOS   // Disable use of PWM servos
 
 /* Serial port baud rate */
 #define BAUDRATE     57600
@@ -31,6 +31,11 @@
 #define USE_DFPLAYER   // DFPlayer Mini kullanımını etkinleştir
 #define DFPLAYER_RX_PIN 12  // Arduino pin 12 -> DFPlayer TX
 #define DFPLAYER_TX_PIN 13  // Arduino pin 13 -> DFPlayer RX
+
+/* Servo timing control variables */
+bool servo_active = false;
+unsigned long servo_start_time = 0;
+const unsigned long SERVO_HOLD_TIME = 15000; // 5 saniye = 5000 ms
 
 #if defined(ARDUINO) && ARDUINO >= 100
 #include "Arduino.h"
@@ -108,6 +113,11 @@ bool buzzer_enabled = false;      // Buzzer etkin mi?
 bool buzzer_state = false;        // Anlık buzzer durumu (HIGH/LOW)
 unsigned long last_beep_time = 0; // Son beep zamanı
 
+/* Servo timing control variables */
+bool servo_moving_to_90 = false;   // Servo 90 dereceye gidiyor mu?
+bool servo_waiting_at_90 = false;  // Servo 90 derecede bekliyor mu?
+unsigned long servo_wait_start_time = 0;
+
 /* DFPlayer fonksiyonları */
 #ifdef USE_DFPLAYER
 void initDFPlayer() {
@@ -156,6 +166,39 @@ void checkDFPlayerStatus() {
     else if (type == DFPlayerError) {
       Serial.print(F("DFPlayer hatası: "));
       Serial.println(value);
+    }
+  }
+}
+#endif
+
+/* Servo Motor fonksiyonları */
+#ifdef USE_SERVOS
+// Servo hareketi tetikleme fonksiyonu
+void triggerServoMovement(int servoIndex) {
+  if (servoIndex >= 0 && servoIndex < N_SERVOS) {
+    servos[servoIndex].setTargetPosition(90);
+    servo_active = true;
+    servo_start_time = millis();
+    
+    Serial.print("Servo ");
+    Serial.print(servoIndex);
+    Serial.println(" 90 dereceye gidiyor...");
+  }
+}
+
+// Servo zamanlama kontrolü
+void checkServoTiming() {
+  if (servo_active) {
+    unsigned long current_time = millis();
+    
+    // 5 saniye geçti mi kontrol et
+    if (current_time - servo_start_time >= SERVO_HOLD_TIME) {
+      // 5 saniye doldu, servo'yu başlangıç pozisyonuna döndür
+      for (int i = 0; i < N_SERVOS; i++) {
+        servos[i].setTargetPosition(servoInitPosition[i]);
+      }
+      servo_active = false;
+      Serial.println("Servo baslangic pozisyonuna donuyor...");
     }
   }
 }
@@ -235,6 +278,19 @@ int runCommand() {
     #endif
     Serial.println("OK");
     break;
+  case SERVO_TRIGGER:
+    // Servo motor kontrolü: "v 0" komutu ile 90 dereceye git ve 5 saniye bekle
+    #ifdef USE_SERVOS
+    if (arg1 >= 0 && arg1 < N_SERVOS) {
+        triggerServoMovement(arg1);
+        Serial.println("OK");
+    } else {
+        Serial.println("Invalid servo index");
+    }
+    #else
+    Serial.println("Servos devre dışı");
+    #endif
+    break;
   case ANALOG_READ:
     Serial.println(analogRead(arg1));
     break;
@@ -259,10 +315,6 @@ int runCommand() {
     Serial.println(Ping(arg1));
     break;
 #ifdef USE_SERVOS
-  case SERVO_WRITE:
-    servos[arg1].setTargetPosition(arg2);
-    Serial.println("OK");
-    break;
   case SERVO_READ:
     Serial.println(servos[arg1].getServo().read());
     break;
@@ -334,6 +386,13 @@ void setup() {
   initDFPlayer();
   #endif
 
+  // Servo kontrol değişkenlerini başlat
+  #ifdef USE_SERVOS
+  servo_moving_to_90 = false;
+  servo_waiting_at_90 = false;
+  servo_wait_start_time = 0;
+  #endif
+
 // Motor controller ve encoder başlatma
 #ifdef USE_BASE
   #ifdef ARDUINO_ENC_COUNTER
@@ -365,7 +424,7 @@ void setup() {
   }
 #endif
 
-  Serial.println("Arduino ROSBridge hazır - DFPlayer destekli versiyon");
+  Serial.println("Arduino ROSBridge hazır - DFPlayer ve Servo destekli versiyon");
 }
 
 /* Enter the main loop.  Read and parse input from the serial port
@@ -435,8 +494,12 @@ void loop() {
   }
 #endif
 
-// Sweep servos
+// Servo kontrolü ve sweep
 #ifdef USE_SERVOS
+  // Servo zamanlama kontrolü
+  checkServoTiming();
+  
+  // Sweep servos
   int i;
   for (i = 0; i < N_SERVOS; i++) {
     servos[i].doSweep();
