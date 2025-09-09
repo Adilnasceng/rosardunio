@@ -131,7 +131,7 @@ void initDFPlayer() {
   }
   
   Serial.println(F("DFPlayer hazır."));
-  dfplayer.volume(10); // 0-30 arası ses seviyesi
+  dfplayer.volume(20); // 0-30 arası ses seviyesi
   delay(200);
   dfplayer_ready = true;
 }
