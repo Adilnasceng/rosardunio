@@ -1,5 +1,6 @@
 /*********************************************************************
  *  ROSArduinoBridge - DFPlayer Mini ses sistemi ve Servo Motor ile güncellenmiş versiyon
+ *  Buton sistemi eklendi
  *********************************************************************/
 
 #define USE_BASE      // Enable the base controller code
@@ -27,6 +28,10 @@
 #define BEEP_ON_TIME   200   // Beep süresi (ms)
 #define BEEP_OFF_TIME  300   // Beep arası bekleme süresi (ms)
 
+/* Emergency Button Configuration */
+#define EMERGENCY_BUTTON_PIN  14   // Buton 14'e bağlı
+#define BUTTON_CHECK_INTERVAL 200 // Buton kontrol aralığı (ms)
+
 /* DFPlayer Mini configuration */
 #define USE_DFPLAYER   // DFPlayer Mini kullanımını etkinleştir
 #define DFPLAYER_RX_PIN 12  // Arduino pin 12 -> DFPlayer TX
@@ -42,6 +47,11 @@ const unsigned long SERVO_HOLD_TIME = 15000; // 5 saniye = 5000 ms
 #else
 #include "WProgram.h"
 #endif
+
+/* Emergency Button Variables */
+bool emergency_stop = false;
+bool last_button_state = HIGH;
+unsigned long last_button_check = 0;
 
 /* DFPlayer Mini kütüphaneleri */
 #ifdef USE_DFPLAYER
@@ -117,6 +127,40 @@ unsigned long last_beep_time = 0; // Son beep zamanı
 bool servo_moving_to_90 = false;   // Servo 90 dereceye gidiyor mu?
 bool servo_waiting_at_90 = false;  // Servo 90 derecede bekliyor mu?
 unsigned long servo_wait_start_time = 0;
+
+/* Emergency Button Check Function */
+void checkEmergencyButton() {
+  unsigned long current_time = millis();
+  
+  // Buton kontrol aralığını kontrol et
+  if (current_time - last_button_check >= BUTTON_CHECK_INTERVAL) {
+    bool current_button_state = digitalRead(EMERGENCY_BUTTON_PIN);
+    
+    // Buton durumu değişti mi kontrol et
+    if (current_button_state != last_button_state) {
+      if (current_button_state == LOW) {
+        // Buton basıldı - Emergency stop aktif
+        emergency_stop = true;
+        #ifdef USE_BASE
+        setMotorSpeeds(0, 0);  // Motorları durdur
+        moving = 0;
+        resetPID();
+        #endif
+        Serial.println("EMERGENCY_STOP_ACTIVE");
+      } else {
+        // Buton bırakıldı - Emergency stop pasif
+        emergency_stop = false;
+        Serial.println("EMERGENCY_STOP_INACTIVE");
+      }
+      last_button_state = current_button_state;
+    } else if (current_button_state == LOW) {
+      // Buton basılı tutuluyorsa periyodik mesaj gönder
+      Serial.println("EMERGENCY_STOP_HELD");
+    }
+    
+    last_button_check = current_time;
+  }
+}
 
 /* DFPlayer fonksiyonları */
 #ifdef USE_DFPLAYER
@@ -332,6 +376,12 @@ int runCommand() {
     Serial.println("OK");
     break;
   case MOTOR_SPEEDS:
+    /* Emergency stop kontrolü */
+    if (emergency_stop) {
+      Serial.println("EMERGENCY_STOP_PREVENTING_MOVEMENT");
+      break;
+    }
+    
     /* Reset the auto stop timer */
     lastMotorCommand = millis();
     if (arg1 == 0 && arg2 == 0) {
@@ -345,6 +395,12 @@ int runCommand() {
     Serial.println("OK"); 
     break;
   case MOTOR_RAW_PWM:
+    /* Emergency stop kontrolü */
+    if (emergency_stop) {
+      Serial.println("EMERGENCY_STOP_PREVENTING_MOVEMENT");
+      break;
+    }
+    
     /* Reset the auto stop timer */
     lastMotorCommand = millis();
     resetPID();
@@ -373,6 +429,12 @@ int runCommand() {
 /* Setup function--runs once at startup. */
 void setup() {
   Serial.begin(BAUDRATE);
+
+  // Emergency Button setup
+  pinMode(EMERGENCY_BUTTON_PIN, INPUT_PULLUP);
+  emergency_stop = false;
+  last_button_state = HIGH;
+  last_button_check = millis();
 
   // Buzzer pin'ini output olarak ayarla ve başlangıçta kapat
   pinMode(BUZZER_PIN, OUTPUT);
@@ -424,7 +486,7 @@ void setup() {
   }
 #endif
 
-  Serial.println("Arduino ROSBridge hazır - DFPlayer ve Servo destekli versiyon");
+  Serial.println("Arduino ROSBridge hazır - DFPlayer, Servo ve Emergency Button destekli versiyon");
 }
 
 /* Enter the main loop.  Read and parse input from the serial port
@@ -432,6 +494,9 @@ void setup() {
    interval and check for auto-stop conditions.
 */
 void loop() {
+  // Emergency button kontrolü
+  checkEmergencyButton();
+  
   while (Serial.available() > 0) {
     
     // Read the next character
